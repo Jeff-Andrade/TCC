@@ -1,0 +1,21 @@
+# This file was produced by the NASA Exoplanet Archive  http://exoplanetarchive.ipac.caltech.edu
+# Sat Mar 29 15:49:28 2025
+#
+# User preference: *
+#
+# COLUMN toi:            TESS Object of Interest
+# COLUMN tid:            TESS Input Catalog ID
+# COLUMN tfopwg_disp:    TFOPWG Dispostion (CP | FP | KP | PC)
+#	TESS Follow-up Observing Program Working Group (TFOPWG) Dispostion:
+#
+#APC=ambiguous planetary candidate
+#CP=confirmed planet
+#FA=false alarm
+#FP=false positive
+#KP=known planet
+#PC=planetary candidate
+#
+# Binary classification: Positive Label: Confirmed Planet and Known Planet, Negative Label: False Alarm, False Positive.
+#
+#Positive_data = 939 light curves
+#Negative_ data= 1125 light curves
