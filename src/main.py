@@ -33,7 +33,7 @@ if __name__ == "__main__":
         np.savez(FEATURES_FILE, X=X, y=y)
         print("Features armazenadas em cache no disco.")
 
-    print("Distribution de Classes:")
+    print("Distribuição de Classes:")
     print(pd.Series(y).value_counts(normalize=True))
 
     trainer = PlanetClassifierTrainer(X, y)
