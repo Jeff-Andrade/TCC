@@ -3,7 +3,6 @@ from config import POS_CSV, NEG_CSV
 
 
 def load_data():
-    """Loads and labels positive and negative data from CSV files."""
     pos_df = pd.read_csv(POS_CSV)
     pos_df = pos_df[pos_df['tfopwg_disp'].isin(['CP', 'KP'])]
     pos_df['label'] = 'planet'
