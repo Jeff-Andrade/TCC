@@ -34,7 +34,7 @@ class ExoplanetClassifierApp:
         self.drop_frame = ctk.CTkFrame(self.frame, width=300, height=100, fg_color="#1a1a1a")
         self.drop_frame.pack(pady=10)
         self.drop_frame.pack_propagate(False)
-        drop_label = ctk.CTkLabel(self.drop_frame, text="Arraste e Splte Arquivos .fits aqui")
+        drop_label = ctk.CTkLabel(self.drop_frame, text="Arraste e Solte Arquivos .fits aqui")
         drop_label.pack(expand=True)
 
         # Bind drop
