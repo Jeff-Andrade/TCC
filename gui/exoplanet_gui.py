@@ -1,11 +1,15 @@
-from tkinterdnd2 import TkinterDnD, DND_FILES
-import customtkinter as ctk
-from src.feature_extractor import extract_features_from_array
+import tkinter.filedialog as fd
+
+import joblib
 import matplotlib.pyplot as plt
 import numpy as np
-import joblib
 from astropy.io import fits
-import tkinter.filedialog as fd
+
+import customtkinter as ctk
+from tkinterdnd2 import DND_FILES, TkinterDnD
+
+from src.feature_extractor import extract_features_from_array
+
 
 
 class ExoplanetClassifierApp:

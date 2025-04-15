@@ -12,6 +12,9 @@ from data_loader import load_data
 
 
 if __name__ == "__main__":
+    TUNING_RUNS = 5          # <- Number of full tuning attempts
+    ITERATIONS_PER_RUN = 1000
+
     combined_df = load_data()
 
     if os.path.exists(FEATURES_FILE):
@@ -36,6 +39,8 @@ if __name__ == "__main__":
     print("Distribuição de Classes:")
     print(pd.Series(y).value_counts(normalize=True))
 
-    trainer = PlanetClassifierTrainer(X, y)
-    trainer.hyperparameter_tuning(iterations=1000)
-    trainer.train_final_model()
+    for run in range(1, TUNING_RUNS + 1):
+        print(f"\n🎯 Tuning Run {run}/{TUNING_RUNS}")
+        trainer = PlanetClassifierTrainer(X, y)
+        trainer.hyperparameter_tuning(iterations=ITERATIONS_PER_RUN)
+        trainer.train_final_model()
