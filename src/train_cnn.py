@@ -3,7 +3,7 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
-from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.metrics import classification_report, confusion_matrix, ConfusionMatrixDisplay
 from sklearn.model_selection import train_test_split
 
 # Diretórios
@@ -82,6 +82,17 @@ np.save(history_path, history.history)
 y_pred = (model.predict(X_test) > 0.50).astype(int).flatten()
 print("\nRelatório de Classificação:\n", classification_report(y_test, y_pred, target_names=["not planet", "planet"]))
 print("Matriz de Confusão:\n", confusion_matrix(y_test, y_pred))
+
+# Matriz de Confusão
+cm = confusion_matrix(y_test, y_pred)
+disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=["not planet", "planet"])
+
+plt.figure(figsize=(6, 5))
+disp.plot(cmap=plt.cm.Blues, values_format="d")
+plt.title("CNN - Matriz de Confusão")
+plt.tight_layout()
+plt.savefig(os.path.join(MODEL_DIR, "confusion_matrix.png"))
+plt.show()
 
 # Plot do treinamento
 plt.figure(figsize=(8, 5))

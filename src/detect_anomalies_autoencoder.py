@@ -58,22 +58,22 @@ fa_mse = np.mean((X_fa_scaled - X_fa_pred) ** 2, axis=(1, 2))
 threshold = np.percentile(fa_mse, 95)
 print(f"Threshold (95% FA): {threshold:.6f}")
 
-# Classificar is_anomaly: True se reconstruction_error >= threshold
-is_anomaly = de_errors >= threshold
+# Classificar comportamento semelhante ou não a alarme falso
+is_fa_like = de_errors < threshold
 
 # DataFrame de resultados
 df_res = pd.DataFrame({
     "tid": tids,
     "label": labels,
     "reconstruction_error": de_errors,
-    "is_anomaly": is_anomaly
+    "is_fa_like": is_fa_like
 })
 
 # Estatísticas textuais
-print("\nDistribuição por label e is_anomaly:")
-print(df_res.groupby(["label", "is_anomaly"]).size())
-print("\nTotal por label com padrão FA (is_anomaly=False):")
-print(df_res[df_res["is_anomaly"] == False]["label"].value_counts())
+print("\nDistribuição por label e is_fa_like:")
+print(df_res.groupby(["label", "is_fa_like"]).size())
+print("\nTotal por label com comportamento semelhante a FA (is_fa_like=True):")
+print(df_res[df_res["is_fa_like"] == True]["label"].value_counts())
 
 # Visualizações
 # 1) Histograma de erros
@@ -90,33 +90,33 @@ plt.tight_layout()
 plt.show()
 
 # 2) Bar plot contagens
-counts = df_res.groupby(["label", "is_anomaly"]).size().unstack(fill_value=0)
+counts = df_res.groupby(["label", "is_fa_like"]).size().unstack(fill_value=0)
 counts.plot(kind="bar", stacked=True, figsize=(8, 5))
-plt.title("Contagem por Label e is_anomaly")
+plt.title("Contagem por Label e Comportamento FA-like")
 plt.xlabel("Label")
 plt.ylabel("Número de Amostras")
-plt.legend(title="is_anomaly")
+plt.legend(title="Comportamento semelhante a FA")
 plt.tight_layout()
 plt.show()
 
 
 # 3) Exemplos de curvas
 def plot_examples(lab, status, ax):
-    # status: True->anomaly, False->FA-like
-    subset = df_res[(df_res["label"] == lab) & (df_res["is_anomaly"] == status)]
+    # status: True->FA-like, False->não FA-like
+    subset = df_res[(df_res["label"] == lab) & (df_res["is_fa_like"] == status)]
     if subset.empty:
         return
     tid_sample = subset.sample(n=3, random_state=42)["tid"].tolist()
     for idx, tid in enumerate(tid_sample):
         arr = np.load(os.path.join(DATA_DIR, lab, f"TIC_{tid}.npy"))
-        ax[idx].plot(np.linspace(0, 1, n_points), arr, color=("crimson" if status else "steelblue"))
-        ax[idx].set_title(f"{lab} {'Anômala' if status else 'FA-like'} TIC {tid}", fontsize=8)
+        ax[idx].plot(np.linspace(0, 1, n_points), arr, color=("steelblue" if status else "crimson"))
+        ax[idx].set_title(f"{lab} {'FA-like' if status else 'Não FA-like'} TIC {tid}", fontsize=8)
         ax[idx].set_xticks([])
         ax[idx].set_yticks([])
 
 
 fig, axes = plt.subplots(2, 3, figsize=(12, 6))
-fig.suptitle("Exemplos: Linha 1 = Anômala; Linha 2 = FA-like")
+fig.suptitle("Exemplos: Linha 1 = FA-like; Linha 2 = Não FA-like")
 for j, lab in enumerate(["CP", "FP", "KP"]):
     plot_examples(lab, True, axes[0])
     plot_examples(lab, False, axes[1])
