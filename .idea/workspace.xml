@@ -5,10 +5,7 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="527307d5-f67d-4713-9dfa-ec166e9b39b7" name="Changes" comment="First commit">
-      <change beforePath="$PROJECT_DIR$/.idea/csv-editor.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/csv-editor.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/detect_anomalies_autoencoder.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/detect_anomalies_autoencoder.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/train_cnn.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/train_cnn.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -25,6 +22,12 @@
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
+  <component name="GithubPullRequestsUISettings"><![CDATA[{
+  "selectedUrlAndAccountId": {
+    "url": "https://github.com/Jeff-Andrade/TCC/",
+    "accountId": "0b89ee5c-c262-47a3-97f5-f1c25b42064d"
+  }
+}]]></component>
   <component name="ProjectColorInfo">{
   &quot;associatedIndex&quot;: 6
 }</component>
@@ -34,25 +37,26 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;Python.analyze_dataset.executor&quot;: &quot;Run&quot;,
-    &quot;Python.detect_anomalies_autoencoder.executor&quot;: &quot;Run&quot;,
-    &quot;Python.download.executor&quot;: &quot;Run&quot;,
-    &quot;Python.features.executor&quot;: &quot;Run&quot;,
-    &quot;Python.main.executor&quot;: &quot;Run&quot;,
-    &quot;Python.preprocess.executor&quot;: &quot;Run&quot;,
-    &quot;Python.preprocessing.executor&quot;: &quot;Run&quot;,
-    &quot;Python.shap_analysis.executor&quot;: &quot;Run&quot;,
-    &quot;Python.train_autoencoder_FA.executor&quot;: &quot;Run&quot;,
-    &quot;Python.train_cnn.executor&quot;: &quot;Run&quot;,
-    &quot;Python.train_xgboost.executor&quot;: &quot;Run&quot;,
-    &quot;Python.visualization.executor&quot;: &quot;Run&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;SHARE_PROJECT_CONFIGURATION_FILES&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;master&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ASKED_MARK_IGNORED_FILES_AS_EXCLUDED": "true",
+    "Python.analyze_dataset.executor": "Run",
+    "Python.detect_anomalies_autoencoder.executor": "Run",
+    "Python.download.executor": "Run",
+    "Python.features.executor": "Run",
+    "Python.main.executor": "Run",
+    "Python.preprocess.executor": "Run",
+    "Python.preprocessing.executor": "Run",
+    "Python.shap_analysis.executor": "Run",
+    "Python.train_autoencoder_FA.executor": "Run",
+    "Python.train_cnn.executor": "Run",
+    "Python.train_xgboost.executor": "Run",
+    "Python.visualization.executor": "Run",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "SHARE_PROJECT_CONFIGURATION_FILES": "true",
+    "git-widget-placeholder": "master"
   }
-}</component>
+}]]></component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
       <recent name="C:\Users\jeffe\PycharmProjects\Exoplanets\data\raw" />
@@ -204,7 +208,15 @@
       <option name="project" value="LOCAL" />
       <updated>1746516771493</updated>
     </task>
-    <option name="localTasksCounter" value="2" />
+    <task id="LOCAL-00002" summary="First commit">
+      <option name="closed" value="true" />
+      <created>1746557643361</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1746557643361</updated>
+    </task>
+    <option name="localTasksCounter" value="3" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">
