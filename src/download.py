@@ -35,10 +35,20 @@ def download_label(label: str, tids, base_output: str):
             if not collection:
                 print(f"[!] Nenhuma curva para TIC {tid_str} em {label}")
             else:
-                for lc in collection.download_all():
-                    if lc is None:
+                # Seleciona apenas uma curva de maior duração por setor
+                lcs = collection.download_all()
+                sector_best = {}
+                for lc in lcs:
+                    if lc is None or not hasattr(lc, 'sector') or lc.time is None or len(lc.time) < 2:
                         continue
-                    sector = lc.sector if hasattr(lc, 'sector') else 'NA'
+                    sector = lc.sector
+                    duration = (lc.time[-1] - lc.time[0]).value
+                    # Atualiza se maior
+                    if sector not in sector_best or duration > sector_best[sector][1]:
+                        sector_best[sector] = (lc, duration)
+
+                # Salva apenas curvas selecionadas
+                for sector, (lc, _) in sector_best.items():
                     fname = f"TIC_{sanitize(tid_str)}_sec{sector}.fits"
                     path = os.path.join(tic_dir, fname)
 
