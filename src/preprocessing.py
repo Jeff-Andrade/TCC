@@ -46,19 +46,6 @@ def estimate_period(lc: LightCurve, minimum_period=0.5, maximum_period=20) -> fl
     return 1.0 / best_freq
 
 
-def estimate_t0(lc: LightCurve, period: float) -> float:
-    """
-    Estima t0 como o instante de mínimo de fluxo na curva dobrada.
-    """
-    folded = lc.fold(period=period)
-    idx_min = np.argmin(folded.flux.value)
-    return folded.time.value[idx_min]
-
-
-def phase_fold(lc: LightCurve, period: float, t0: float) -> LightCurve:
-    return lc.fold(period=period, epoch_time=t0)
-
-
 def resample_lightcurve(lc: LightCurve, num_points=256) -> np.ndarray:
     phase = lc.time.value
     flux = lc.flux.value

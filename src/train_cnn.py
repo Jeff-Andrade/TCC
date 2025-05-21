@@ -1,106 +1,187 @@
 import os
-
-import matplotlib.pyplot as plt
 import numpy as np
-import tensorflow as tf
-from sklearn.metrics import classification_report, confusion_matrix, ConfusionMatrixDisplay
-from sklearn.model_selection import train_test_split
+import pandas as pd
+import matplotlib.pyplot as plt
 
-# Diretórios
-MODEL_DIR = "../models/CNN"
-os.makedirs(MODEL_DIR, exist_ok=True)
-
-
-# Carregamento dos dados
-def load_data(processed_dir="../data/processed", n_points=256):
-    X = []
-    y = []
-    for label in os.listdir(processed_dir):
-        if label not in ["CP", "FP", "KP"]:
-            continue  # ignorar FA
-        label_path = os.path.join(processed_dir, label)
-        for file in os.listdir(label_path):
-            if file.endswith(".npy"):
-                x = np.load(os.path.join(label_path, file))
-                if len(x) == n_points:
-                    X.append(x)
-                    y.append(1 if label in ["CP", "KP"] else 0)
-    return np.array(X), np.array(y)
-
-
-X, y = load_data()
-X = X[..., np.newaxis]  # adicionar canal
-
-# Divisão treino/val/teste
-X_train, X_temp, y_train, y_temp = train_test_split(X, y, test_size=0.3, random_state=42, stratify=y)
-X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.5, random_state=42, stratify=y_temp)
-
-
-# Modelo CNN 1D
-def create_cnn_model(input_shape):
-    model = tf.keras.Sequential([
-        tf.keras.layers.Conv1D(32, 5, activation='relu', input_shape=input_shape),
-        tf.keras.layers.MaxPooling1D(2),
-        tf.keras.layers.Conv1D(64, 5, activation='relu'),
-        tf.keras.layers.MaxPooling1D(2),
-        tf.keras.layers.Conv1D(128, 5, activation='relu'),
-        tf.keras.layers.GlobalAveragePooling1D(),
-        tf.keras.layers.Dropout(0.5),
-        tf.keras.layers.Dense(64, activation='relu'),
-        tf.keras.layers.Dense(1, activation='sigmoid')
-    ])
-    model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
-    return model
-
-
-model = create_cnn_model(X_train.shape[1:])
-
-# Callbacks
-checkpoint_path = os.path.join(MODEL_DIR, "best_model.keras")
-history_path = os.path.join(MODEL_DIR, "training_history.npy")
-history_plot_path = os.path.join(MODEL_DIR, "training_plot.png")
-
-callbacks = [
-    tf.keras.callbacks.ModelCheckpoint(checkpoint_path, save_best_only=True, monitor="val_loss", mode="min"),
-    tf.keras.callbacks.EarlyStopping(monitor="val_loss", patience=10, restore_best_weights=True)
-]
-
-# Treinamento
-history = model.fit(
-    X_train, y_train,
-    validation_data=(X_val, y_val),
-    epochs=50,
-    batch_size=32,
-    callbacks=callbacks,
-    verbose=1
+from scipy.stats import skew, kurtosis, ks_2samp, wasserstein_distance, entropy
+from scipy.spatial.distance import jensenshannon
+from sklearn.metrics import (
+    roc_auc_score,
+    precision_recall_curve,
+    auc as compute_auc,
+    precision_recall_fscore_support,
+    silhouette_score,
+    davies_bouldin_score
 )
+from tensorflow.keras.models import load_model
 
-# Salvar histórico
-np.save(history_path, history.history)
+# ------------------------
+# Configurações
+# ------------------------
+DATA_DIR       = "../data/processed"           # onde estão as pastas FA, FP, KP, CP
+MODEL_BASE_DIR = "models/Autoencoders"      # Autoencoder_<label>/autoencoder_<label>.keras
+LABELS         = ["FA", "FP", "KP", "CP"]
+N_POINTS       = 256
+BATCH_SIZE     = 32
 
-# Avaliação
-y_pred = (model.predict(X_test) > 0.50).astype(int).flatten()
-print("\nRelatório de Classificação:\n", classification_report(y_test, y_pred, target_names=["not planet", "planet"]))
-print("Matriz de Confusão:\n", confusion_matrix(y_test, y_pred))
+# ------------------------
+# Carrega curvas de cada classe
+# ------------------------
+def load_data(label):
+    path = os.path.join(DATA_DIR, label)
+    X = []
+    for fn in os.listdir(path):
+        if fn.endswith(".npy"):
+            arr = np.load(os.path.join(path, fn))
+            if arr.shape[0] == N_POINTS:
+                X.append(arr[..., np.newaxis])
+    X = np.array(X)  # shape (N, 256, 1)
+    # normalização por amostra
+    X -= X.mean(axis=1, keepdims=True)
+    X /= X.std(axis=1, keepdims=True)
+    return X
 
-# Matriz de Confusão
-cm = confusion_matrix(y_test, y_pred)
-disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=["not planet", "planet"])
+data = {lbl: load_data(lbl) for lbl in LABELS}
 
-plt.figure(figsize=(6, 5))
-disp.plot(cmap=plt.cm.Blues, values_format="d")
-plt.title("CNN - Matriz de Confusão")
-plt.tight_layout()
-plt.savefig(os.path.join(MODEL_DIR, "confusion_matrix.png"))
-plt.show()
+# ------------------------
+# Carrega autoencoders
+# ------------------------
+models = {}
+for lbl in LABELS:
+    mp = os.path.join(MODEL_BASE_DIR, f"AE_{lbl}", f"autoencoder_{lbl}.keras")
+    models[lbl] = load_model(mp)
 
-# Plot do treinamento
-plt.figure(figsize=(8, 5))
-plt.plot(history.history['loss'], label='train_loss')
-plt.plot(history.history['val_loss'], label='val_loss')
-plt.title("CNN Training History")
-plt.xlabel("Epoch")
-plt.ylabel("Loss")
-plt.legend()
-plt.savefig(history_plot_path)
-plt.close()
+# ------------------------
+# 1) Estatísticas descritivas por (AE_train, class_test)
+# ------------------------
+desc_stats = []
+for train_lbl in LABELS:
+    ae = models[train_lbl]
+    for test_lbl in LABELS:
+        X = data[test_lbl]
+        recon = ae.predict(X, batch_size=BATCH_SIZE, verbose=0)
+        mse = np.mean((X - recon)**2, axis=(1,2))
+        mu, med = mse.mean(), np.median(mse)
+        sd = mse.std()
+        cv = sd/mu if mu!=0 else np.nan
+        sk = skew(mse)
+        kt = kurtosis(mse)
+        p10, p25, p75, p90 = np.percentile(mse, [10,25,75,90])
+        out5 = np.sum(mse > mu+3*sd)
+        desc_stats.append({
+            'AE_train':  train_lbl,
+            'class_test':test_lbl,
+            'mean':      mu,
+            'median':    med,
+            'std':       sd,
+            'cv':        cv,
+            'skew':      sk,
+            'kurtosis':  kt,
+            'p10':       p10,
+            'p25':       p25,
+            'p75':       p75,
+            'p90':       p90,
+            'n_out_3sigma':  int(out5),
+            'pct_out_3sigma': out5/len(mse)
+        })
+df_desc = pd.DataFrame(desc_stats)
+
+# ------------------------
+# 2) Métricas de separação e 3) Classificação binária
+# ------------------------
+sep_stats = []
+bin_stats = []
+for train_lbl in LABELS:
+    ae = models[train_lbl]
+    # agrupa todas as classes
+    X_all = np.vstack([data[lbl] for lbl in LABELS])
+    y_true = np.hstack([[1]*len(data[train_lbl])] + [[0]*len(data[lbl]) for lbl in LABELS if lbl!=train_lbl])
+    recon_all = ae.predict(X_all, batch_size=BATCH_SIZE, verbose=0)
+    mse_all = np.mean((X_all - recon_all)**2, axis=(1,2))
+    # ROC AUC
+    roc_auc = roc_auc_score(y_true, -mse_all)    # -mse para sinal alto = positivo
+    # PR AUC
+    prec, rec, th = precision_recall_curve(y_true, -mse_all)
+    pr_auc = compute_auc(rec, prec)
+    # KS statistic
+    mse_pos = mse_all[y_true==1]
+    mse_neg = mse_all[y_true==0]
+    ks_stat, _ = ks_2samp(mse_pos, mse_neg)
+    # EMD (Wasserstein) e JS divergence
+    emd = wasserstein_distance(mse_pos, mse_neg)
+    # JS requires distribuição de prob.
+    hist_p, bin_edges = np.histogram(mse_pos, bins=100, density=True)
+    hist_n, _         = np.histogram(mse_neg, bins=bin_edges, density=True)
+    js_div = jensenshannon(hist_p+1e-10, hist_n+1e-10)  # evitar zeros
+    sep_stats.append({
+        'AE_train': train_lbl,
+        'roc_auc':  roc_auc,
+        'pr_auc':   pr_auc,
+        'ks_stat':  ks_stat,
+        'emd':      emd,
+        'js_div':   js_div
+    })
+    # threshold = ponto médio entre medianas (pos vs neg)
+    thresh = (np.median(mse_pos) + np.median(mse_neg))/2
+    y_pred = (mse_all <= thresh).astype(int)
+    p, r, f1, sup = precision_recall_fscore_support(y_true, y_pred, average='binary')
+    bin_stats.append({
+        'AE_train':    train_lbl,
+        'threshold':   thresh,
+        'precision':   p,
+        'recall':      r,
+        'f1_score':    f1,
+        'support_pos': sup
+    })
+
+df_sep = pd.DataFrame(sep_stats)
+df_bin = pd.DataFrame(bin_stats)
+
+# ------------------------
+# 4) Métricas de clustering 1D (silhouette, Davies-Bouldin)
+# ------------------------
+cluster_stats = []
+for train_lbl in LABELS:
+    ae = models[train_lbl]
+    X_all = np.vstack([data[lbl] for lbl in LABELS])
+    y_lbl = np.hstack([[train_lbl]*len(data[train_lbl])] +
+                      [[f"not_{train_lbl}"]*len(data[lbl]) for lbl in LABELS if lbl!=train_lbl])
+    recon_all = ae.predict(X_all, batch_size=BATCH_SIZE, verbose=0)
+    mse_all = np.mean((X_all - recon_all)**2, axis=(1,2)).reshape(-1,1)
+    # silhouette requires at least 2 labels
+    try:
+        sil = silhouette_score(mse_all, y_lbl, metric='euclidean')
+    except:
+        sil = np.nan
+    try:
+        db = davies_bouldin_score(mse_all, y_lbl)
+    except:
+        db = np.nan
+    cluster_stats.append({
+        'AE_train': train_lbl,
+        'silhouette':          sil,
+        'davies_bouldin':      db
+    })
+df_cluster = pd.DataFrame(cluster_stats)
+
+# ------------------------
+# Output
+# ------------------------
+print("\n=== Estatísticas Descritivas ===")
+df_desc.pivot(index="AE_train", columns="class_test", values="mean")
+
+
+print("\n=== Métricas de Separação (ROC AUC, PR AUC, KS, EMD, JS) ===")
+print(df_sep.set_index("AE_train").round(4))
+
+print("\n=== Métricas Binárias (threshold, precision, recall, f1) ===")
+print(df_bin.set_index("A0,,0E_train").round(4))
+
+print("\n=== Métricas de Clustering 1D ===")
+print(df_cluster.set_index("AE_train").round(4))
+
+# Salvar tudo em CSV
+df_desc.to_csv("ae_data_quality_desc_stats.csv", index=False)
+df_sep.to_csv("ae_data_quality_separation.csv", index=False)
+df_bin.to_csv("ae_data_quality_binary.csv", index=False)
+df_cluster.to_csv("ae_data_quality_clustering.csv", index=False)

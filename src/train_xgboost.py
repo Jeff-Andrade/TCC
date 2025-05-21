@@ -56,7 +56,7 @@ def objective(trial):
         "eval_metric":        "logloss"
     }
     X_tr, X_val, y_tr, y_val = train_test_split(
-        X_pool, y_pool, test_size=0.2, random_state=42, stratify=y_pool
+        X_pool, y_pool, test_size0=0.2, random_state=42, stratify=y_pool
     )
     model = XGBClassifier(**params)
     model.fit(X_tr, y_tr)
