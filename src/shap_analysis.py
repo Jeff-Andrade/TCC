@@ -6,7 +6,7 @@ import pandas as pd
 import shap
 
 # Caminhos
-MODEL_PATH = "../models/XGBoost/xgb_model.pkl"
+MODEL_PATH = "../models/XGBoost/xgb_model.joblib"
 FEATURES_PATH = "../data/processed/features.csv"
 
 # Carregar modelo treinado

@@ -1,105 +1,112 @@
+# -*- coding: utf-8 -*-
 import os
-import random
-
+import sys
 import joblib
-import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
+import optuna
+import matplotlib.pyplot as plt
 import seaborn as sns
+
 from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-from tqdm import tqdm
 from xgboost import XGBClassifier
 
-# Paths
-DATA_PATH = "../data/processed/features.csv"
-MODEL_DIR = "../models/XGBoost"
-MODEL_PATH = os.path.join(MODEL_DIR, "xgb_model.pkl")
+# Garante que o console use UTF‑8 e evita o UnicodeEncodeError
+sys.stdout.reconfigure(encoding='utf-8')
+
+# Caminhos
+DATA_PATH  = "../data/processed/features.csv"
+MODEL_DIR  = "../models/XGBoost"
+STUDY_PATH = os.path.join(MODEL_DIR, "xgb_tuning_study.joblib")
+MODEL_PATH = os.path.join(MODEL_DIR, "xgb_model.joblib")
 os.makedirs(MODEL_DIR, exist_ok=True)
 
-# Load data
+# Carrega e prepara dados
 df = pd.read_csv(DATA_PATH)
-
-# Map labels to binary
 label_map = {"CP": "planet", "KP": "planet", "FP": "not planet"}
 df = df[df["label"].isin(label_map)]
 df["class"] = df["label"].map(label_map)
 X = df.drop(columns=["tid", "label", "class"])
-y = df["class"]
+y = (df["class"] == "planet").astype(int)
 
-# Encode target
-y_encoded = (y == "planet").astype(int)  # 1 = planet, 0 = not planet
-
-# Standardize features
-scaler = StandardScaler()
-X_scaled = scaler.fit_transform(X)
-
-# Hyperparameter search
-best_score = -np.inf
-best_model = None
-best_params = {}
-
-param_grid = {
-    "learning_rate": np.linspace(0.01, 0.3, 30),
-    "random_state": range(1, 1000),
-    "test_size": np.linspace(0.2, 0.4, 20)
-}
-
-for _ in tqdm(range(1000)):
-    lr = random.choice(param_grid["learning_rate"])
-    rs = random.choice(param_grid["random_state"])
-    ts = random.choice(param_grid["test_size"])
-
-    X_train, X_test, y_train, y_test = train_test_split(
-        X_scaled, y_encoded, test_size=ts, random_state=rs, stratify=y_encoded
-    )
-
-    model = XGBClassifier(eval_metric="logloss",
-                          learning_rate=lr, random_state=rs)
-    model.fit(X_train, y_train)
-    y_pred = model.predict(X_test)
-    y_prob = model.predict_proba(X_test)[:, 1]
-    score = roc_auc_score(y_test, y_prob)
-
-    if score > best_score:
-        best_score = score
-        best_model = model
-        best_params = {
-            "learning_rate": lr,
-            "random_state": rs,
-            "test_size": ts,
-            "roc_auc": score
-        }
-
-# Save best model
-joblib.dump(best_model, MODEL_PATH)
-
-# Evaluate final model
-X_train, X_test, y_train, y_test = train_test_split(
-    X_scaled, y_encoded, test_size=best_params["test_size"],
-    random_state=best_params["random_state"], stratify=y_encoded
+# Hold-out final: usado apenas para avaliação no fim
+X_pool, X_hold, y_pool, y_hold = train_test_split(
+    X, y, test_size=0.2, random_state=42, stratify=y
 )
-y_pred = best_model.predict(X_test)
-y_prob = best_model.predict_proba(X_test)[:, 1]
 
-report = classification_report(y_test, y_pred, target_names=["not planet", "planet"])
-conf_matrix = confusion_matrix(y_test, y_pred)
+# Normalização
+scaler = StandardScaler().fit(X_pool)
+X_pool = scaler.transform(X_pool)
+X_hold = scaler.transform(X_hold)
 
-# Print report and confusion matrix
-print("\nBest Hyperparameters:")
-print(best_params)
-print("\nClassification Report:")
+def objective(trial):
+    params = {
+        "learning_rate":      trial.suggest_float("learning_rate", 0.01, 0.3),
+        "n_estimators":       trial.suggest_int("n_estimators", 100, 1000),
+        "max_depth":          trial.suggest_int("max_depth", 3, 10),
+        "min_child_weight":   trial.suggest_int("min_child_weight", 1, 10),
+        "subsample":          trial.suggest_float("subsample", 0.5, 1.0),
+        "colsample_bytree":   trial.suggest_float("colsample_bytree", 0.5, 1.0),
+        "gamma":              trial.suggest_float("gamma", 0.0, 5.0),
+        "reg_lambda":         trial.suggest_float("reg_lambda", 1e-3, 10.0),
+        "reg_alpha":          trial.suggest_float("reg_alpha", 1e-3, 10.0),
+        "scale_pos_weight":   trial.suggest_float("scale_pos_weight", 1.0, 1.5),
+        "random_state":       42,
+        "eval_metric":        "logloss"
+    }
+    X_tr, X_val, y_tr, y_val = train_test_split(
+        X_pool, y_pool, test_size=0.2, random_state=42, stratify=y_pool
+    )
+    model = XGBClassifier(**params)
+    model.fit(X_tr, y_tr)
+    y_val_prob = model.predict_proba(X_val)[:, 1]
+    return roc_auc_score(y_val, y_val_prob)
+
+# Otimização
+study = optuna.create_study(direction="maximize")
+study.optimize(objective, n_trials=100)
+
+# Salva estudo e exibe melhores parâmetros
+joblib.dump(study, STUDY_PATH)
+best = study.best_params
+print("\n=== Melhores hiperparâmetros (val ROC-AUC) ===")
+for k, v in best.items():
+    print(f"{k}: {v}")
+
+# Treina modelo final
+final_params = best.copy()
+final_params.update({
+    "random_state": 42,
+    "eval_metric": "logloss"
+})
+final_model = XGBClassifier(**final_params)
+final_model.fit(X_pool, y_pool)
+joblib.dump(final_model, MODEL_PATH)
+
+# Avaliação no hold-out final
+y_hold_pred = final_model.predict(X_hold)
+y_hold_prob = final_model.predict_proba(X_hold)[:, 1]
+hold_auc = roc_auc_score(y_hold, y_hold_prob)
+report = classification_report(
+    y_hold, y_hold_pred,
+    target_names=["not planet", "planet"]
+)
+conf_matrix = confusion_matrix(y_hold, y_hold_pred)
+
+print(f"\n=== Avaliação no Hold-out Final (ROC-AUC = {hold_auc:.4f}) ===")
 print(report)
 
-# Plot confusion matrix
+# Matriz de confusão
 plt.figure(figsize=(6, 5))
-sns.heatmap(conf_matrix, annot=True, fmt="d", cmap="Blues",
-            xticklabels=["not planet", "planet"],
-            yticklabels=["not planet", "planet"])
-plt.title("Confusion Matrix")
-plt.xlabel("Predicted")
-plt.ylabel("True")
+sns.heatmap(
+    conf_matrix, annot=True, fmt="d", cmap="Blues",
+    xticklabels=["not planet", "planet"],
+    yticklabels=["not planet", "planet"]
+)
+plt.title("Matriz de Confusão (Hold-out)")
+plt.xlabel("Previsto")
+plt.ylabel("Verdadeiro")
 plt.tight_layout()
 plt.savefig(os.path.join(MODEL_DIR, "confusion_matrix.png"))
 plt.show()

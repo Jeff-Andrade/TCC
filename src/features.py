@@ -203,6 +203,6 @@ if features:
     df_feat = pd.DataFrame(features)
     df_feat.to_csv(FEATURES_CSV_PATH, index=False)
     print(df_feat.head())
-    print(f"\n✅ Features extraídas: {len(df_feat)} exemplos em {FEATURES_CSV_PATH}")
+    print(f"\n Features extraídas: {len(df_feat)} exemplos em {FEATURES_CSV_PATH}")
 else:
-    print("🚨 Nenhuma feature extraída. Verifique caminhos, rótulos e arquivos.")
+    print(" Nenhuma feature extraída. Verifique caminhos, rótulos e arquivos.")

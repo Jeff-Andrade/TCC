@@ -1,124 +1,134 @@
-import os
+# autoencoders_by_class.py
 
-import matplotlib.pyplot as plt
+import os
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
+
 from sklearn.preprocessing import StandardScaler
+from tensorflow.keras import layers, models, callbacks
 from tensorflow.keras.models import load_model
 
-# Caminhos
-DATA_DIR = "../data/processed"
-MODEL_PATH = "../models/Autoencoder_FA/autoencoder_fa.keras"
+# ── Configurações ────────────────────────────────────────────────────────────
+DATA_DIR   = "../data/processed"
+LABEL_CSV  = os.path.join(DATA_DIR, "tic_labels.csv")
+OUT_DIR    = "../models/Autoencoders_by_class"
+N_POINTS   = 256
+BATCH_SIZE = 32
+EPOCHS     = 50
+VAL_SPLIT  = 0.1
 
-# Carregar rótulos e filtrar
-label_csv = os.path.join(DATA_DIR, "tic_labels.csv")
-df = pd.read_csv(label_csv)
-df = df[df["tfopwg_disp"].isin(["CP", "FP", "KP"])]
+os.makedirs(OUT_DIR, exist_ok=True)
 
-# Carregar curvas e metadados
-X, tids, labels = [], [], []
-n_points = 256
+# ── 1) Carrega dados por classe ──────────────────────────────────────────────
+df = pd.read_csv(LABEL_CSV)
+classes = ["CP", "FP", "KP", "FA"]
+data_by_class = {c: [] for c in classes}
+
 for _, row in df.iterrows():
-    tid = int(row["tid"])
-    lab = row["tfopwg_disp"]
-    path = os.path.join(DATA_DIR, lab, f"TIC_{tid}.npy")
-    if os.path.exists(path):
-        arr = np.load(path)
-        if len(arr) == n_points:
-            X.append(arr)
-            tids.append(tid)
-            labels.append(lab)
-X = np.array(X)[..., np.newaxis]
+    lbl = row["tfopwg_disp"]
+    if lbl in classes:
+        path = os.path.join(DATA_DIR, lbl, f"TIC_{int(row['tid'])}.npy")
+        if os.path.exists(path):
+            arr = np.load(path)
+            if arr.shape[0] == N_POINTS:
+                data_by_class[lbl].append(arr)
 
-# Padronizar com scaler
-scaler = StandardScaler()
-X_flat = X.reshape((X.shape[0], -1))
-X_scaled = scaler.fit_transform(X_flat).reshape(X.shape)
+# ── 2) Função para criar o autoencoder ───────────────────────────────────────
+def build_autoencoder(input_shape):
+    inp = layers.Input(shape=input_shape)
+    x = layers.Conv1D(32, 3, activation="relu", padding="same")(inp)
+    x = layers.MaxPooling1D(2, padding="same")(x)
+    x = layers.Conv1D(16, 3, activation="relu", padding="same")(x)
+    code = layers.MaxPooling1D(2, padding="same")(x)
+    x = layers.Conv1D(16, 3, activation="relu", padding="same")(code)
+    x = layers.UpSampling1D(2)(x)
+    x = layers.Conv1D(32, 3, activation="relu", padding="same")(x)
+    x = layers.UpSampling1D(2)(x)
+    out = layers.Conv1D(1, 3, activation="linear", padding="same")(x)
+    ae = models.Model(inp, out)
+    ae.compile(optimizer="adam", loss="mse")
+    return ae
 
-# Carregar autoencoder e prever
-ae = load_model(MODEL_PATH)
-X_pred = ae.predict(X_scaled, verbose=0)
+# ── 3) Treina um autoencoder por classe ─────────────────────────────────────
+histories = {}
+for cls in classes:
+    arrs = np.stack(data_by_class[cls], axis=0)[..., np.newaxis]
+    flat = arrs.reshape((arrs.shape[0], -1))
+    scaler = StandardScaler().fit(flat)
+    scaled = scaler.transform(flat).reshape(arrs.shape)
 
-# Calcular MSE de reconstrução por amostra
-de_errors = np.mean((X_scaled - X_pred) ** 2, axis=(1, 2))
+    ae = build_autoencoder(input_shape=(N_POINTS, 1))
+    es = callbacks.EarlyStopping(monitor="val_loss", patience=5, restore_best_weights=True)
+    h = ae.fit(
+        scaled, scaled,
+        epochs=EPOCHS,
+        batch_size=BATCH_SIZE,
+        validation_split=VAL_SPLIT,
+        callbacks=[es],
+        verbose=2
+    )
 
-# Calcular threshold dinamicamente (95º percentil dos FA)
-fa_dir = os.path.join(DATA_DIR, "FA")
-X_fa = []
-for f in os.listdir(fa_dir):
-    if f.endswith(".npy"):
-        arr = np.load(os.path.join(fa_dir, f))
-        if len(arr) == n_points:
-            X_fa.append(arr)
-X_fa = np.array(X_fa)[..., np.newaxis]
-X_fa_flat = X_fa.reshape((X_fa.shape[0], -1))
-X_fa_scaled = scaler.transform(X_fa_flat).reshape(X_fa.shape)
-X_fa_pred = ae.predict(X_fa_scaled, verbose=0)
-fa_mse = np.mean((X_fa_scaled - X_fa_pred) ** 2, axis=(1, 2))
-threshold = np.percentile(fa_mse, 95)
-print(f"Threshold (95% FA): {threshold:.6f}")
+    save_dir = os.path.join(OUT_DIR, cls)
+    os.makedirs(save_dir, exist_ok=True)
+    ae.save(os.path.join(save_dir, "autoencoder.keras"))
+    np.save(os.path.join(save_dir, "scaler_mean.npy"), scaler.mean_)
+    np.save(os.path.join(save_dir, "scaler_scale.npy"), scaler.scale_)
+    histories[cls] = h
 
-# Classificar comportamento semelhante ou não a alarme falso
-is_fa_like = de_errors < threshold
+# ── 4) Avalia reconstrução em cada classe ───────────────────────────────────
+def compute_mse_for_class(cls):
+    m = np.load(os.path.join(OUT_DIR, cls, "scaler_mean.npy"))
+    s = np.load(os.path.join(OUT_DIR, cls, "scaler_scale.npy"))
+    scaler = StandardScaler()
+    scaler.mean_ = m
+    scaler.scale_ = s
 
-# DataFrame de resultados
-df_res = pd.DataFrame({
-    "tid": tids,
-    "label": labels,
-    "reconstruction_error": de_errors,
-    "is_fa_like": is_fa_like
-})
+    ae = load_model(os.path.join(OUT_DIR, cls, "autoencoder.keras"))
 
-# Estatísticas textuais
-print("\nDistribuição por label e is_fa_like:")
-print(df_res.groupby(["label", "is_fa_like"]).size())
-print("\nTotal por label com comportamento semelhante a FA (is_fa_like=True):")
-print(df_res[df_res["is_fa_like"] == True]["label"].value_counts())
+    arrs = np.stack(data_by_class[cls], axis=0)[..., np.newaxis]
+    flat = arrs.reshape((arrs.shape[0], -1))
+    scaled = scaler.transform(flat).reshape(arrs.shape)
 
-# Visualizações
-# 1) Histograma de erros
+    pred = ae.predict(scaled, verbose=0)
+    mse = np.mean((scaled - pred) ** 2, axis=(1, 2))
+    return mse
+
+errors = {cls: compute_mse_for_class(cls) for cls in classes}
+
+# ── 5) Estatísticas por classe ───────────────────────────────────────────────
+print("\nEstatísticas de MSE por classe:")
+for cls in classes:
+    errs = errors[cls]
+    print(f"{cls}: média={errs.mean():.3e}, mediana={np.median(errs):.3e}, std={errs.std():.3e}")
+
+# ── 6) Plot de histórico de treinamento ───────────────────────────────────────
 plt.figure(figsize=(10, 6))
-for lab in ["CP", "FP", "KP"]:
-    errs = df_res[df_res["label"] == lab]["reconstruction_error"]
-    plt.hist(errs, bins=50, alpha=0.6, label=lab)
-plt.axvline(threshold, color="red", linestyle="--", label=f"Threshold={threshold:.6f}")
-plt.title("Erro de Reconstrução por Label")
-plt.xlabel("MSE")
+for cls, h in histories.items():
+    plt.plot(h.history["val_loss"], label=f"{cls} val_loss")
+plt.yscale("log")
+plt.xlabel("Época")
+plt.ylabel("Val Loss (MSE)")
+plt.legend()
+plt.title("Histórico de Val Loss por Classe")
+plt.tight_layout()
+plt.show()
+
+# ── 7) Distribuição de erros por classe ──────────────────────────────────────
+plt.figure(figsize=(10, 6))
+for cls in classes:
+    plt.hist(errors[cls], bins=50, alpha=0.5, label=cls)
+plt.xlabel("Reconstruction MSE")
 plt.ylabel("Frequência")
+plt.title("Distribuição de Erro de Reconstrução por Classe")
 plt.legend()
 plt.tight_layout()
 plt.show()
 
-# 2) Bar plot contagens
-counts = df_res.groupby(["label", "is_fa_like"]).size().unstack(fill_value=0)
-counts.plot(kind="bar", stacked=True, figsize=(8, 5))
-plt.title("Contagem por Label e Comportamento FA-like")
-plt.xlabel("Label")
-plt.ylabel("Número de Amostras")
-plt.legend(title="Comportamento semelhante a FA")
+plt.figure(figsize=(6, 4))
+df_box = pd.DataFrame({cls: pd.Series(errors[cls]) for cls in classes})
+df_box.boxplot()
+plt.ylabel("MSE")
+plt.title("Boxplot de Erro de Reconstrução por Classe")
 plt.tight_layout()
-plt.show()
-
-
-# 3) Exemplos de curvas
-def plot_examples(lab, status, ax):
-    # status: True->FA-like, False->não FA-like
-    subset = df_res[(df_res["label"] == lab) & (df_res["is_fa_like"] == status)]
-    if subset.empty:
-        return
-    tid_sample = subset.sample(n=3, random_state=42)["tid"].tolist()
-    for idx, tid in enumerate(tid_sample):
-        arr = np.load(os.path.join(DATA_DIR, lab, f"TIC_{tid}.npy"))
-        ax[idx].plot(np.linspace(0, 1, n_points), arr, color=("steelblue" if status else "crimson"))
-        ax[idx].set_title(f"{lab} {'FA-like' if status else 'Não FA-like'} TIC {tid}", fontsize=8)
-        ax[idx].set_xticks([])
-        ax[idx].set_yticks([])
-
-
-fig, axes = plt.subplots(2, 3, figsize=(12, 6))
-fig.suptitle("Exemplos: Linha 1 = FA-like; Linha 2 = Não FA-like")
-for j, lab in enumerate(["CP", "FP", "KP"]):
-    plot_examples(lab, True, axes[0])
-    plot_examples(lab, False, axes[1])
-plt.tight_layout(rect=[0, 0, 1, 0.95])
 plt.show()
