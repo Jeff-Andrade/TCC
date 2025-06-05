@@ -1,21 +1,21 @@
-# exoplanet_gui.py
-
 import os
 import joblib
 import numpy as np
 import matplotlib.pyplot as plt
-
 import customtkinter as ctk
-from tkinterdnd2 import DND_FILES, TkinterDnD
 import tkinter.filedialog as fd
 
-from src.features import extract_features_from_array
+from tkinterdnd2 import DND_FILES, TkinterDnD
+from astropy.io import fits
+
+from src.features import extract_features_from_fits
 
 
 class ExoplanetClassifierApp:
     def __init__(self, master):
         self.master = master
         self.model = None
+        self.scaler = None  # Novo atributo para o scaler
         self.light_curves = {}
         self.predictions = {}
         self.setup_ui()
@@ -31,14 +31,15 @@ class ExoplanetClassifierApp:
 
         self.model_label = ctk.CTkLabel(self.frame, text="Nenhum modelo carregado", text_color="gray")
         self.model_label.pack()
-        ctk.CTkButton(self.frame, text="Carregar Modelo", command=self.load_model).pack(pady=5)
+        ctk.CTkButton(self.frame, text="Carregar Modelo e Scaler", command=self.load_model).pack(pady=5)
 
         self.fits_label = ctk.CTkLabel(self.frame, text="Sem arquivos .fits carregados", text_color="gray")
         self.fits_label.pack()
         ctk.CTkButton(self.frame, text="Carregar .fits", command=self.load_fits).pack(pady=5)
 
         self.drop_frame = ctk.CTkFrame(self.frame, width=300, height=100, fg_color="#1a1a1a")
-        self.drop_frame.pack(pady=10); self.drop_frame.pack_propagate(False)
+        self.drop_frame.pack(pady=10)
+        self.drop_frame.pack_propagate(False)
         ctk.CTkLabel(self.drop_frame, text="Arraste e solte .fits aqui").pack(expand=True)
         self.drop_frame.drop_target_register(DND_FILES)
         self.drop_frame.dnd_bind("<<Drop>>", self.drop_fits)
@@ -50,7 +51,8 @@ class ExoplanetClassifierApp:
         self.classify_btn.pack(pady=10)
 
         self.dropdown = ctk.CTkComboBox(self.frame, values=[], command=self.show_plot)
-        self.dropdown.pack(pady=10); self.dropdown.set("Selecionar arquivo")
+        self.dropdown.pack(pady=10)
+        self.dropdown.set("Selecionar arquivo")
 
         self.output_label = ctk.CTkLabel(self.frame, text="", font=ctk.CTkFont(size=16))
         self.output_label.pack(pady=5)
@@ -58,11 +60,18 @@ class ExoplanetClassifierApp:
         ctk.CTkButton(self.frame, text="Exibir Curva", command=self.show_plot).pack(pady=5)
 
     def load_model(self):
-        path = fd.askopenfilename(filetypes=[("Joblib model", "*.joblib")])
-        if not path: return
+        # Selecionar arquivo do modelo
+        model_path = fd.askopenfilename(title="Selecione o modelo (.joblib)", filetypes=[("Joblib model", "*.joblib")])
+        if not model_path:
+            return
+        # Selecionar arquivo do scaler
+        scaler_path = fd.askopenfilename(title="Selecione o scaler (.joblib)", filetypes=[("Joblib scaler", "*.joblib")])
+        if not scaler_path:
+            return
         try:
-            self.model = joblib.load(path)
-            self.model_label.configure(text="Modelo carregado ✅", text_color="green")
+            self.model = joblib.load(model_path)
+            self.scaler = joblib.load(scaler_path)
+            self.model_label.configure(text="Modelo e Scaler carregados ✅", text_color="green")
         except Exception as e:
             self.model_label.configure(text=f"Erro ao carregar: {e}", text_color="red")
 
@@ -76,7 +85,6 @@ class ExoplanetClassifierApp:
 
     def _add_fits(self, paths):
         count = 0
-        from astropy.io import fits
         for p in paths:
             try:
                 with fits.open(p) as hdul:
@@ -96,33 +104,58 @@ class ExoplanetClassifierApp:
             self.dropdown.set(keys[0])
 
     def classify_all(self):
-        if not self.model:
-            self.output_label.configure(text="⚠️ Carregue um modelo", text_color="orange")
+        if not self.model or not self.scaler:
+            self.output_label.configure(text="⚠️ Carregue o modelo e o scaler", text_color="orange")
             return
+
         results = []
-        for fname, (time, flux) in self.light_curves.items():
+        for fname in self.light_curves.keys():
             try:
-                feat = extract_features_from_array(time, flux)
+                feat = extract_features_from_fits(fname)
+
                 if feat is None:
                     results.append(f"{os.path.basename(fname)} → Curva curta")
                     continue
-                pred = self.model.predict(feat)[0]
-                prob = self.model.predict_proba(feat)[0][pred]
+
+                if isinstance(feat, np.ndarray):
+                    if feat.ndim == 1:
+                        feat = feat.reshape(1, -1)
+                    elif feat.ndim == 2 and feat.shape[0] != 1:
+                        feat = feat.reshape(1, -1)
+                else:
+                    try:
+                        arr = np.asarray(feat)
+                        if arr.ndim == 1:
+                            feat = arr.reshape(1, -1)
+                        else:
+                            feat = arr.reshape(1, -1)
+                    except:
+                        results.append(f"{os.path.basename(fname)} → Erro no formato de features")
+                        continue
+
+                # Aplica o scaler aqui antes da predição
+                feat_scaled = self.scaler.transform(feat)
+
+                pred = self.model.predict(feat_scaled)[0]
+                proba = self.model.predict_proba(feat_scaled)[0][pred]
                 label = "Planeta" if pred == 1 else "Não-Planeta"
-                results.append(f"{os.path.basename(fname)} → {label} ({prob*100:.1f}%)")
-            except:
-                results.append(f"{os.path.basename(fname)} → Erro")
+                results.append(f"{os.path.basename(fname)} → {label} ({proba*100:.1f}%)")
+            except Exception as e:
+                results.append(f"{os.path.basename(fname)} → Erro ({e})")
+
         self.output_label.configure(text="\n".join(results[-10:]), text_color="lightblue")
 
     def show_plot(self, selected=None):
         key = selected or self.dropdown.get()
         if key in self.light_curves:
             time, flux = self.light_curves[key]
-            plt.figure(figsize=(8,4))
+            plt.figure(figsize=(8, 4))
             plt.plot(time, flux, ".", markersize=2)
-            plt.xlabel("Time"); plt.ylabel("Flux")
+            plt.xlabel("Time")
+            plt.ylabel("Flux")
             plt.title(os.path.basename(key))
-            plt.tight_layout(); plt.show()
+            plt.tight_layout()
+            plt.show()
 
 
 if __name__ == "__main__":
