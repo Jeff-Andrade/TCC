@@ -124,12 +124,6 @@ def symmetry(flux):
         return -np.mean(np.abs(L - R))
     return 0
 
-def binning(flux, n_bins=20):
-    if flux.size < n_bins:
-        return [0] * n_bins
-    parts = np.array_split(flux, n_bins)
-    return [np.nanmean(p) if len(p) > 0 else 0 for p in parts]
-
 def extract_features_from_fits(fits_path):
     with fits.open(fits_path) as hdul:
         data = hdul[1].data
@@ -156,7 +150,6 @@ def extract_features_from_fits(fits_path):
     odd_even_diff = odd_even_depth(t, f, period_bl, dur_bl, t0_bl)
     secondary_snr_val = secondary_snr(f, period_bl, dur_bl, t0_bl, t)
     symm = symmetry(f)
-    bins = binning(f, n_bins=20)
     feat_list = [
         period_bl,
         depth_bl,
@@ -184,7 +177,6 @@ def extract_features_from_fits(fits_path):
         secondary_snr_val,
         symm
     ]
-    feat_list.extend(bins)
     return np.array(feat_list, dtype=float).reshape(1, -1)
 
 if __name__ == "__main__":
@@ -195,14 +187,17 @@ if __name__ == "__main__":
         label = row['tfopwg_disp']
         if label not in VALID_LABELS:
             continue
+
         time, flux = load_flux(tid, label)
         if flux is None or len(flux) < MIN_LENGTH:
             continue
+
         detr = flux - savgol_filter(flux, 101, 3)
         flux_norm = MinMaxScaler().fit_transform(detr.reshape(-1, 1)).flatten()
         flux_norm = flux_norm[np.isfinite(flux_norm)]
         if len(flux_norm) < MIN_LENGTH:
             continue
+
         try:
             stats = basic_stats(flux_norm)
             fftf = fft_features(flux_norm)
@@ -213,7 +208,7 @@ if __name__ == "__main__":
             oe = odd_even_depth(time, flux_norm, period, dur, t0)
             ssnr = secondary_snr(flux_norm, period, dur, t0, time)
             sym = symmetry(flux_norm)
-            bins = binning(flux_norm)
+
             feat = {
                 'tid': tid, 'label': label,
                 'period': period, 'depth': depth, 'duration': dur,
@@ -227,15 +222,17 @@ if __name__ == "__main__":
                 'cwt1': cwts[0], 'cwt2': cwts[1], 'cwt3': cwts[2],
                 'odd_even_diff': oe, 'secondary_snr': ssnr, 'symmetry': sym
             }
-            for i, v in enumerate(bins, 1):
-                feat[f'bin_{i}'] = v
+
+            # Adiciona o dicionário de features à lista
             features.append(feat)
+
         except Exception as e:
             print(f"Erro ao processar TIC {tid}: {e}")
+
     if features:
         df_feat = pd.DataFrame(features)
         df_feat.to_csv(FEATURES_CSV_PATH, index=False)
         print(df_feat.head())
-        print(f"\n Features extraídas: {len(df_feat)} exemplos em {FEATURES_CSV_PATH}")
+        print(f"\nFeatures extraídas: {len(df_feat)} exemplos em {FEATURES_CSV_PATH}")
     else:
-        print(" Nenhuma feature extraída. Verifique caminhos, rótulos e arquivos.")
+        print("Nenhuma feature extraída. Verifique caminhos, rótulos e arquivos.")
