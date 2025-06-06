@@ -29,7 +29,7 @@ shap_values = explainer(X)
 
 # Gerar gráfico de colmeia
 plt.figure(figsize=(8, 6))  # Aumenta o tamanho para não cortar labels
-shap.plots.beeswarm(shap_values, max_display=10, show=False)
+shap.plots.beeswarm(shap_values, max_display=11, show=False)
 
 # Ajuste para não cortar labels
 plt.tight_layout()
